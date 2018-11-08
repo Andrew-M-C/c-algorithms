@@ -9,13 +9,13 @@ struct AMCMemPool;
 struct AMCMemUnit;
 typedef void (*AMCMemPool_DidEmpty_Callback)(struct AMCMemPool *pool, void *arg);
 
-struct AMCMemPool *AMCMemPool_Create(unsigned long unitSize, unsigned long initUnitCount, unsigned long growUnitCount, BOOL useLock);
-int AMCMemPool_Destory(struct AMCMemPool *pool);
+struct AMCMemPool *AMCMemPool_Create(unsigned long unitSize, unsigned long initUnitCount, unsigned long growUnitCount, BOOL useLock, AMCError *errorOut);
+AMCError AMCMemPool_Destory(struct AMCMemPool *pool);
 BOOL AMCMemPool_IsAllFree(struct AMCMemPool *pool);
-int AMCMemPool_SetEmptyCallback(struct AMCMemPool *pool, AMCMemPool_DidEmpty_Callback callback, void *arg);
+AMCError AMCMemPool_SetEmptyCallback(struct AMCMemPool *pool, AMCMemPool_DidEmpty_Callback callback, void *arg);
 
-void *AMCMemPool_Alloc(struct AMCMemPool *pool);
-int AMCMemPool_Free(void *pData);
+void *AMCMemPool_Alloc(struct AMCMemPool *pool, AMCError *errorOut);
+AMCError AMCMemPool_Free(void *pData);
 
 unsigned long AMCMemPool_DataSize(void *data);
 unsigned long AMCMemPool_UnitSizeForPool(struct AMCMemPool *pool);

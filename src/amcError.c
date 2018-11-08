@@ -8,6 +8,7 @@
 const char *_LIB_ERROR_STR[] = {
     "success",
     "unknown error",
+    "library bug",
 };
 
 #define _MAX_LIB_ERRNO      (sizeof(_LIB_ERROR_STR) / sizeof(_LIB_ERROR_STR[0]) - 1)
@@ -62,7 +63,7 @@ void AMCError_SetSuccess(AMCError *error_ptr)
 }
 
 
-BOOL AMCError_IsSuccess(AMCError *error_ptr)
+BOOL AMCError_IsSuccess(const AMCError *error_ptr)
 {
     if (error_ptr) {
         return (0 == error_ptr->sys_errno) && (0 == error_ptr->lib_errno);
@@ -73,7 +74,7 @@ BOOL AMCError_IsSuccess(AMCError *error_ptr)
 }
 
 
-BOOL AMCError_IsError(AMCError *error_ptr)
+BOOL AMCError_IsError(const AMCError *error_ptr)
 {
     if (error_ptr) {
         return error_ptr->sys_errno || error_ptr->lib_errno;
@@ -81,5 +82,21 @@ BOOL AMCError_IsError(AMCError *error_ptr)
     else {
         return TRUE;
     }
+}
+
+
+AMCError AMCError_Make(int sys_errno, int lib_errno)
+{
+    AMCError error;
+    error.sys_errno = sys_errno;
+    error.lib_errno = lib_errno;
+    return error;
+}
+
+
+AMCError AMCError_MakeSuccess()
+{
+    AMCError error = {0, 0};
+    return error;
 }
 

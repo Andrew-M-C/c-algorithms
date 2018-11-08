@@ -14,7 +14,7 @@ TARGET_SO = $(LIB_DIR)/$(TARGET_SO_FILE_NAME)
 TARGET_A = $(LIB_DIR)/$(TARGET_A_FILE_NAME)
 
 # flags
-CFLAGS += -Wall -g -fPIC -lpthread -I./include -I./src
+CFLAGS += -Wall -g -fPIC -lpthread -I./include -I./src -O2
 CPPFLAGS += $(CFLAGS)
 LDFLAGS += -lpthread -lm -lrt
 

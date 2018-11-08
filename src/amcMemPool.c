@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <errno.h>
 
 
 //#define _DEBUG_FLAG
@@ -73,15 +74,15 @@ typedef struct AMCMemUnit {
 #ifdef __INTERNAL_FUNCTION_DECLARATIONS
 
 static BOOL _memUnit_IsInBlock(struct AMCMemUnit *unit, struct AMCMemBlock *block);
-static struct AMCMemBlock *_memBlock_Attach(struct AMCMemPool * pool);
-static struct AMCMemBlock *_memBlock_Attach_WithLock(struct AMCMemPool *pool);
+static struct AMCMemBlock *_memBlock_Attach(struct AMCMemPool * pool, AMCError *errorOut);
+static struct AMCMemBlock *_memBlock_Attach_WithLock(struct AMCMemPool *pool, AMCError *errorOut);
 static inline BOOL _memBlock_IsEmpty(struct AMCMemBlock *block);
 //static inline BOOL _memBlock_IsFull(struct AMCMemBlock *block);
 static inline BOOL _memBlock_IsValid(struct AMCMemBlock *block);
-static struct AMCMemUnit *_memBlock_Alloc(struct AMCMemBlock *block, unsigned long unitSize);
+static struct AMCMemUnit *_memBlock_Alloc(struct AMCMemBlock *block, unsigned long unitSize, AMCError *errorOut);
 static void _memPool_Lock(struct AMCMemPool *pool);
 static void _memPool_Unlock(struct AMCMemPool *pool);
-static int _memBlock_FreeFromPool(struct AMCMemBlock *block, struct AMCMemPool *pool);
+static AMCError _memBlock_FreeFromPool(struct AMCMemBlock *block, struct AMCMemPool *pool);
 static BOOL _memPool_IsEmpty_WithLock(struct AMCMemPool *pool);
 
 #endif
@@ -92,21 +93,24 @@ static BOOL _memPool_IsEmpty_WithLock(struct AMCMemPool *pool);
 #define __UNIT_OPERATIONS
 #ifdef __UNIT_OPERATIONS
 
-static int _memUnit_Free(struct AMCMemUnit *unit)
+static AMCError _memUnit_Free(struct AMCMemUnit *unit)
 {
     struct AMCMemBlock *ownerBlock = NULL;
     struct AMCMemPool *ownerPool = NULL;
     struct AMCMemBlock *block;
     unsigned long unitStructSize, unitIdx;
+    AMCError error = {0, 0};
 
     if ((NULL == unit) || (NULL == unit->pOwnerPool))
     {
-        return -1;
+        error.sys_errno = EINVAL;
+        return error;
     }
 
     if (FALSE == unit->isAllocated)
     {
-        return -1;
+        error.lib_errno = AMC_ERR_BUGGY;
+        return error;
     }
 
     /* determine which block the unit belongs */
@@ -129,7 +133,8 @@ static int _memUnit_Free(struct AMCMemUnit *unit)
 
     if (NULL == ownerBlock)
     {
-        return -1;
+        error.lib_errno = AMC_ERR_BUGGY;
+        return error;
     }
 
 
@@ -146,7 +151,7 @@ static int _memUnit_Free(struct AMCMemUnit *unit)
     }
     else
     {
-        return 0;
+        return error;
     }
 }
 
@@ -171,16 +176,17 @@ static BOOL _memUnit_IsInBlock(struct AMCMemUnit *unit, struct AMCMemBlock *bloc
 }
 
 
-static int _memUnit_Free_WithLock(struct AMCMemUnit *unit)
+static AMCError _memUnit_Free_WithLock(struct AMCMemUnit *unit)
 {
-    int ret = 0;
+    AMCError error = {0, 0};
     if ((NULL == unit) || (NULL == unit->pOwnerPool))
     {
-        return -1;
+        error.sys_errno = EINVAL;
+        return error;
     }
 
     _LOCK_POOL(unit->pOwnerPool);
-    ret = _memUnit_Free(unit);
+    error = _memUnit_Free(unit);
     _UNLOCK_POOL(unit->pOwnerPool);
 
     if (unit->pOwnerPool->emptyCallback)
@@ -191,8 +197,8 @@ static int _memUnit_Free_WithLock(struct AMCMemUnit *unit)
         }
     }
 
-    _DEBUG("[Pool 0x%08lx] Free unit 0x%08lx %s", _ULONG_CVT(unit->pOwnerPool), _ULONG_CVT(unit), (0 == ret) ? "OK" : "faild");
-    return ret;
+    _DEBUG("[Pool 0x%08lx] Free unit 0x%08lx %s", _ULONG_CVT(unit->pOwnerPool), _ULONG_CVT(unit), AMCError_IsSuccess(&error) ? "OK" : "faild");
+    return error;
 }
 
 
@@ -229,21 +235,24 @@ static void _memPool_Unlock(struct AMCMemPool *pool)
 }
 
 
-static struct AMCMemPool *_memPool_Create_WithLock(unsigned long unitSize, unsigned long initUnitCount, unsigned long growUnitCount, BOOL useLock)
+static struct AMCMemPool *_memPool_Create_WithLock(unsigned long unitSize, unsigned long initUnitCount, unsigned long growUnitCount, BOOL useLock, AMCError *errorOut)
 {
     struct AMCMemPool *pool = malloc(sizeof(AMCMemPool_st));
     int callStat;
+    AMCError error = {0, 0};
 
     if (NULL == pool)
     {
-        return NULL;
+        error.sys_errno = errno;
+        goto END;
     }
     else if ((0 == unitSize) || 
             (0 == initUnitCount) ||
             (0 == growUnitCount))
     {
         free(pool);
-        return NULL;
+        error.sys_errno = EINVAL;
+        goto END;
     }
 
 
@@ -262,31 +271,37 @@ static struct AMCMemPool *_memPool_Create_WithLock(unsigned long unitSize, unsig
         {
             free(pool);
             _DEBUG("[Pool 0x%08lx] Cannot create mutex", _ULONG_CVT(pool));
-            return NULL;
+            error.sys_errno = callStat;
+            goto END;
         }
     }
     
 
-    if (NULL == _memBlock_Attach_WithLock(pool))
+    if (NULL == _memBlock_Attach_WithLock(pool, &error))
     {
         free(pool);
         _DEBUG("[Pool 0x%08lx] Cannot attach block", _ULONG_CVT(pool));
-        return NULL;
+        goto END;
     }
 
     _DEBUG("[Pool 0x%08lx] Created, unit size %ld, init count %ld, grow count %ld", 
-        _ULONG_CVT(pool), pool->unitSize, pool->initUnitCount, pool->growUnitCount);
+            _ULONG_CVT(pool), pool->unitSize, pool->initUnitCount, pool->growUnitCount);
+END:
+    if (errorOut) {
+        errorOut->sys_errno = error.sys_errno;
+        errorOut->lib_errno = error.lib_errno;
+    }
     return pool;
 }
 
 
-static int _memPool_Destory(struct AMCMemPool *pool)
+static AMCError _memPool_Destory(struct AMCMemPool *pool)
 {
     struct AMCMemBlock *pBlock, *pNext;
 
     if (NULL == pool)
     {
-        return 0;
+        return AMCError_MakeSuccess();
     }
 
     pBlock = pool->pBlocks;
@@ -300,7 +315,7 @@ static int _memPool_Destory(struct AMCMemPool *pool)
 
     _DEBUG("[Pool 0x%08lx] Destroyed", _ULONG_CVT(pool));
     free(pool);
-    return 0;
+    return AMCError_MakeSuccess();
 }
 
 
@@ -332,7 +347,7 @@ static BOOL _memPool_IsEmpty_WithLock(struct AMCMemPool *pool)
 }
 
 
-static struct AMCMemUnit *_memPool_Alloc_WithLock(struct AMCMemPool *pool)
+static struct AMCMemUnit *_memPool_Alloc_WithLock(struct AMCMemPool *pool, AMCError *errorOut)
 {
     struct AMCMemUnit *retUnit = NULL;
     struct AMCMemBlock *block = NULL;
@@ -347,7 +362,7 @@ static struct AMCMemUnit *_memPool_Alloc_WithLock(struct AMCMemPool *pool)
     {
         if (_memBlock_IsValid(block))
         {
-            retUnit = _memBlock_Alloc(block, pool->unitSize);
+            retUnit = _memBlock_Alloc(block, pool->unitSize, errorOut);
         }
         else
         {}  // continue
@@ -357,8 +372,8 @@ static struct AMCMemUnit *_memPool_Alloc_WithLock(struct AMCMemPool *pool)
     if (NULL == retUnit)
     {
         _DEBUG("[Pool 0x%08lx] We should attach a new block.", _ULONG_CVT(pool));
-        block = _memBlock_Attach(pool);
-        retUnit = _memBlock_Alloc(block, pool->unitSize);
+        block = _memBlock_Attach(pool, NULL);
+        retUnit = _memBlock_Alloc(block, pool->unitSize, errorOut);
     }
 
     /**/
@@ -376,16 +391,18 @@ static struct AMCMemUnit *_memPool_Alloc_WithLock(struct AMCMemPool *pool)
 #ifdef __BLOCK_OPERATIONS
 
 
-static struct AMCMemBlock *_memBlock_Attach(struct AMCMemPool * pool)
+static struct AMCMemBlock *_memBlock_Attach(struct AMCMemPool * pool, AMCError *errorOut)
 {
     struct AMCMemBlock *block = NULL;
     struct AMCMemUnit *unit = NULL;
     struct AMCMemBlock *lastBlock;
     unsigned long blockStructSize, unitStructSize, unitCount, tmp;
+    AMCError error = {0, 0};
 
     if (NULL == pool)
     {
-        return NULL;
+        error.sys_errno = EINVAL;
+        goto END;
     }
 
     /* calculate memory requirement */
@@ -397,7 +414,9 @@ static struct AMCMemBlock *_memBlock_Attach(struct AMCMemPool * pool)
     block = malloc(blockStructSize);
     if (NULL == block)
     {
-        return NULL;
+        error.sys_errno = errno;
+        goto END
+        ;
     }
     
     /* fill in memory pool information */
@@ -432,19 +451,26 @@ static struct AMCMemBlock *_memBlock_Attach(struct AMCMemPool * pool)
 
     /* OK */
     _DEBUG("[Pool 0x%08lx] Attach block 0x%08lx", _ULONG_CVT(pool), _ULONG_CVT(block));
+END:
+    if (errorOut) {
+        errorOut->sys_errno = error.sys_errno;
+        errorOut->lib_errno = error.lib_errno;
+    }
     return block;
 }
 
-static struct AMCMemBlock *_memBlock_Attach_WithLock(struct AMCMemPool *pool)
+static struct AMCMemBlock *_memBlock_Attach_WithLock(struct AMCMemPool *pool, AMCError *errorOut)
 {
     struct AMCMemBlock *block = NULL;
     struct AMCMemUnit *unit = NULL;
     struct AMCMemBlock *lastBlock = NULL;
     unsigned long blockStructSize, unitStructSize, unitCount, tmp;
+    AMCError error = {0, 0};
 
     if (NULL == pool)
     {
-        return NULL;
+        error.sys_errno = EINVAL;
+        goto END;
     }
 
     /* calculate memory requirement */
@@ -457,7 +483,8 @@ static struct AMCMemBlock *_memBlock_Attach_WithLock(struct AMCMemPool *pool)
     if (NULL == block)
     {
         _DEBUG("[Pool 0x%08lx] Cannot malloc %ld bytes.", _ULONG_CVT(pool), blockStructSize);
-        return NULL;
+        error.sys_errno = errno;
+        goto END;
     }
     
     /* fill in memory pool information */
@@ -493,11 +520,16 @@ static struct AMCMemBlock *_memBlock_Attach_WithLock(struct AMCMemPool *pool)
 
     /* OK */
     _DEBUG("[Pool 0x%08lx] Attach block 0x%08lx", _ULONG_CVT(pool), _ULONG_CVT(block));
+END:
+    if (errorOut) {
+        errorOut->sys_errno = error.sys_errno;
+        errorOut->lib_errno = error.lib_errno;
+    }
     return block;
 }
 
 
-static struct AMCMemUnit *_memBlock_Alloc(struct AMCMemBlock *block, unsigned long unitSize)
+static struct AMCMemUnit *_memBlock_Alloc(struct AMCMemBlock *block, unsigned long unitSize, AMCError *errorOut)
 {
     unsigned long unitStructSize = unitSize + sizeof(AMCMemUnit_st);
     unsigned long freeIdx = block->validUnitIdx;
@@ -507,24 +539,28 @@ static struct AMCMemUnit *_memBlock_Alloc(struct AMCMemBlock *block, unsigned lo
     block->validUnitIdx = retUnit->nextUnitIdx;
     block->freeUnitCount -= 1;
     _DEBUG("[Block 0x%08lx] alloc unit 0x%08lx, index %ld, unit size %ld", _ULONG_CVT(block), _ULONG_CVT(retUnit), freeIdx, unitSize);
+    if (errorOut) {
+        errorOut->sys_errno = 0;
+        errorOut->lib_errno = 0;
+    }
     return retUnit;
 }
 
 
 
-static int _memBlock_FreeFromPool(struct AMCMemBlock *block, struct AMCMemPool *pool)
+static AMCError _memBlock_FreeFromPool(struct AMCMemBlock *block, struct AMCMemPool *pool)
 {
-    if (block && pool)
-    {}
-    else
-    {
-        return -1;
+    AMCError error = {0, 0};
+
+    if (!(block && pool)) {
+        error.sys_errno = EINVAL;
+        return error;
     }
 
     if (block == (pool->pBlocks))
     {
         _DEBUG("[Block 0x%08lx] Block empty but will not be freed.", _ULONG_CVT(block));
-        return 0;
+        return error;
     }
     else
     {
@@ -541,14 +577,15 @@ static int _memBlock_FreeFromPool(struct AMCMemBlock *block, struct AMCMemPool *
             preBlock->pNext = block->pNext;
             free(block);
             _DEBUG("[Block 0x%08lx] Block empty, free", _ULONG_CVT(block));
-            return 0;
+            return error;
         }
         else
         {
             _DEBUG("[Pool 0x%08lx] Block 0x%08lx Unfound", _ULONG_CVT(pool), _ULONG_CVT(block));
-            return -1;
+            error.lib_errno = AMC_ERR_BUGGY;
+            return error;
         }
-        return 0;
+        return error;
     }
 }
 
@@ -579,13 +616,13 @@ static inline BOOL _memBlock_IsValid(struct AMCMemBlock *block)
 #define __PUBLIC_INTERFACES
 #ifdef __PUBLIC_INTERFACES
 
-struct AMCMemPool *AMCMemPool_Create(unsigned long unitSize, unsigned long initUnitCount, unsigned long growUnitCount, BOOL useLock)
+struct AMCMemPool *AMCMemPool_Create(unsigned long unitSize, unsigned long initUnitCount, unsigned long growUnitCount, BOOL useLock, AMCError *errorPut)
 {
-    return _memPool_Create_WithLock(unitSize, initUnitCount, growUnitCount, useLock);
+    return _memPool_Create_WithLock(unitSize, initUnitCount, growUnitCount, useLock, errorPut);
 }
 
 
-int AMCMemPool_Destory(struct AMCMemPool *pool)
+AMCError AMCMemPool_Destory(struct AMCMemPool *pool)
 {
     return _memPool_Destory(pool);
 }
@@ -597,39 +634,47 @@ BOOL AMCMemPool_IsAllFree(struct AMCMemPool *pool)
 }
 
 
-int AMCMemPool_SetEmptyCallback(struct AMCMemPool *pool, AMCMemPool_DidEmpty_Callback callback, void *arg)
+AMCError AMCMemPool_SetEmptyCallback(struct AMCMemPool *pool, AMCMemPool_DidEmpty_Callback callback, void *arg)
 {
+    AMCError error = {0, 0};
+
     if (NULL == pool)
     {
-        return -1;
+        error.sys_errno = EINVAL;
+        return error;
     }
 
     pool->callbackArg = arg;
     pool->emptyCallback = callback;
-    return 0;
+    return error;
 }
 
 
-void *AMCMemPool_Alloc(struct AMCMemPool *pool)
+void *AMCMemPool_Alloc(struct AMCMemPool *pool, AMCError *errorOut)
 {
     if (pool)
     {
-        AMCMemUnit_st *pUnit = _memPool_Alloc_WithLock(pool);
+        AMCMemUnit_st *pUnit = _memPool_Alloc_WithLock(pool, errorOut);
         return pUnit ? _memData_ByUnit(pUnit) : NULL;
     }
     else
     {
+        if (errorOut) {
+            errorOut->sys_errno = EINVAL;
+            errorOut->lib_errno = 0;
+        }
         return NULL;
     }
 }
 
 
-int AMCMemPool_Free(void *pData)
+AMCError AMCMemPool_Free(void *pData)
 {
     AMCMemUnit_st *pUnit = NULL;
     if (NULL == pData)
     {
-        return -1;
+        AMCError error = {EINVAL, 0};
+        return error;
     }
     else
     {
