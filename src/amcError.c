@@ -8,7 +8,7 @@
 const char *_LIB_ERROR_STR[] = {
     "success",
     "unknown error",
-}
+};
 
 #define _MAX_LIB_ERRNO      (sizeof(_LIB_ERROR_STR) / sizeof(_LIB_ERROR_STR[0]) - 1)
 

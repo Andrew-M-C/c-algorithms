@@ -7,38 +7,16 @@ LD  = ld
 AR  = ar
 
 # target
-BIN_DIR = ./bin
-TARGET_SO_FILE_NAME = libcoevent.so
-TARGET_A_FILE_NAME = libcoevent.a
-TARGET_SO = $(BIN_DIR)/$(TARGET_SO_FILE_NAME)
-TARGET_A = $(BIN_DIR)/$(TARGET_A_FILE_NAME)
-
-# directories
-LIBCO_DIR = ./libco_from_git
-LIBCO_BIN = $(LIBCO_DIR)/lib
-LIBCO_A_FILE_NAME = libcolib.a
-LIBCO_HEADER_FILE_NAME = co_routine.h
-LIBCO_HEADER = $(LIBCO_DIR)/$(LIBCO_HEADER_FILE_NAME)
-LIBCO_TARGET = $(LIBCO_BIN)/$(LIBCO_A_FILE_NAME)
-LIBCO_GIT_URL = https://github.com/Tencent/libco.git
-
-# install parameters
-LIBCOEVENT_LIB_PATH_CONF_DIR = /etc/ld.so.conf.d/
-LIBCOEVENT_LIB_DIR_NAME = libcoevent.conf
-prefix ?= ./Makefile
-LIBCOEVENT_PREFIX = $(prefix)
-LIBCOEVENT_LIB_PATH = $(prefix)/lib/
-LIBCOEVENT_LIB_HEADER_PATH = $(prefix)/include/
-
+LIB_DIR = ./lib
+TARGET_SO_FILE_NAME = libamcctool.so
+TARGET_A_FILE_NAME = libamcctool.a
+TARGET_SO = $(LIB_DIR)/$(TARGET_SO_FILE_NAME)
+TARGET_A = $(LIB_DIR)/$(TARGET_A_FILE_NAME)
 
 # flags
-CFLAGS += -Wall -g -fPIC -lpthread -I./include -I./src -I./$(LIBCO_DIR) -levent -DDEBUG_FLAG
+CFLAGS += -Wall -g -fPIC -lpthread -I./include -I./src
 CPPFLAGS += $(CFLAGS)
 LDFLAGS += -lpthread -lm -lrt
-
-# enable MariaDB
-CFLAGS += -DENABLE_MARIADB=1 -I/usr/include/mariadb
-LDFLAGS += -lmariadbclient -lmariadb
 
 # source files
 C_SRCS = $(wildcard ./src/*.c)
@@ -67,60 +45,30 @@ export LD
 
 # default target
 .PHONY:all
-all: $(LIBCO_TARGET) $(TARGET_SO) $(TARGET_A)
-	@echo "	<< libcoevent made >>"
+all: $(TARGET_SO) $(TARGET_A)
+	@echo "	<< libamcctool made >>"
 
 # install
 .PHONY:install
 install:
-	@if [ ! -d $(LIBCOEVENT_PREFIX) ]; then\
-		echo "Please specify parameter: prefix";\
-		exit 1;\
-	fi
-	@echo "# libcoevent default configuration" > $(LIBCOEVENT_LIB_PATH_CONF_DIR)/$(LIBCOEVENT_LIB_DIR_NAME)
-	@echo "$(LIBCOEVENT_LIB_PATH)" >> $(LIBCOEVENT_LIB_PATH_CONF_DIR)/$(LIBCOEVENT_LIB_DIR_NAME)
-	install -c $(TARGET_SO) $(LIBCOEVENT_LIB_PATH)
-	install -c $(TARGET_A) $(LIBCOEVENT_LIB_PATH)
-	install -c $(LIBCO_TARGET) $(LIBCOEVENT_LIB_PATH)
-	@ls include | xargs -I [] install -m 0664 include/[] $(LIBCOEVENT_LIB_HEADER_PATH)
-	install -m 0664 $(LIBCO_HEADER) $(LIBCOEVENT_LIB_HEADER_PATH)
-	@echo "<< libcoevent installed >>"
+	@echo "<< libamcctool installion todo >>"
 
 # uninstall
 .PHONY:uninstall
 uninstall:
-	@if [ ! -d $(LIBCOEVENT_PREFIX) ]; then\
-		echo "Please specify parameter: prefix";\
-		exit 1;\
-	fi
-	-rm -f $(LIBCOEVENT_LIB_PATH)/$(TARGET_SO_FILE_NAME)
-	-rm -f $(LIBCOEVENT_LIB_PATH)/$(TARGET_A_FILE_NAME)
-	-rm -f $(LIBCOEVENT_LIB_PATH_CONF_DIR)/$(LIBCOEVENT_LIB_DIR_NAME)
-	-rm -f $(LIBCOEVENT_LIB_PATH_CONF_DIR)/$(LIBCO_A_FILE_NAME)
-	-@ls include | xargs -I [] rm -f $(LIBCOEVENT_LIB_HEADER_PATH)/[]
-	-rm -f $(LIBCOEVENT_LIB_HEADER_PATH)/$(LIBCO_HEADER_FILE_NAME)
-	@echo "<< libcoevent uninstalled >>"
+	@echo "<< libamcctool uninstallion todo >>"
 
-# libcoevent
-$(TARGET_SO): $(BIN_DIR) $(C_OBJS) $(CPP_OBJS) $(ASM_OBJS)
+# libamcctool
+$(TARGET_SO): $(LIB_DIR) $(C_OBJS) $(CPP_OBJS) $(ASM_OBJS)
 #	@echo ".so deps = "$^
 	$(FINAL_CC) -o $@ $(CPP_OBJS) $(CPPFLAGS) -shared
 
-$(TARGET_A): $(BIN_DIR) $(C_OBJS) $(CPP_OBJS) $(ASM_OBJS)
+$(TARGET_A): $(LIB_DIR) $(C_OBJS) $(CPP_OBJS) $(ASM_OBJS)
 #	@echo ".a deps = "$^
 	$(AR) r $@ $(C_OBJS) $(CPP_OBJS) $(ASM_OBJS)
 
-$(BIN_DIR):
-	mkdir $(BIN_DIR)
-
-# libco
-$(LIBCO_DIR):
-	git clone 'https://github.com/Tencent/libco.git' $(LIBCO_DIR)
-
-$(LIBCO_TARGET): $(LIBCO_DIR)
-	if [ ! -f $(LIBCO_TARGET) ]; then\
-		make -C $(LIBCO_DIR);\
-	fi
+$(LIB_DIR):
+	mkdir $(LIB_DIR)
 
 # automatic compiler
 -include $(C_OBJS:.o=.d)
@@ -165,11 +113,7 @@ clean:
 
 .PHONY: distclean
 distclean: clean
-	-@if [ -d $(LIBCO_DIR) ]; then\
-		rm -rf $(LIBCO_DIR);\
-	fi
 
 .PHONY: test
 test:
-	@echo 'Now build test programs'
-	@echo LIBCOEVENT_LIB_PATH=$(LIBCOEVENT_LIB_PATH)
+	@echo "test"

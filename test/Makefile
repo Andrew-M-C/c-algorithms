@@ -11,7 +11,7 @@ TARGET_BIN = testmain
 # flagsst 
 CFLAGS += -Wall -g -fPIC -lpthread -I../../include -I./
 CPPFLAGS += $(CFLAGS)
-LDFLAGS += -Wl,-Bdynamic -lpthread -lm -lrt -levent -ldl
+LDFLAGS += -lpthread -lm
 
 # source files
 C_SRCS = $(wildcard ./*.c)
@@ -75,9 +75,9 @@ $(TARGET_BIN): $(C_OBJS) $(CPP_OBJS)
 
 .PHONY: clean
 clean:
-#	@rm -f $(C_OBJS) $(CPP_OBJS) $(PROG_NAME) clist.txt cpplist.txt *.d *.d.* *.o
-	-@find -name '*.o' | xargs -I [] rm [] >> /dev/null
-	-@find -name '*.d' | xargs -I [] rm [] >> /dev/null
+	-@rm -f $(C_OBJS) $(CPP_OBJS) $(PROG_NAME) clist.txt cpplist.txt *.d *.d.* *.o
+#	-@find -name '*.o' | xargs -I [] rm [] >> /dev/null
+#	-@find -name '*.d' | xargs -I [] rm [] >> /dev/null
 #	-@find -name '*.so' | xargs -I [] rm [] >> /dev/null
 	-@rm -f $(TARGET_BIN)
 	@echo "	<< $(TARGET_BIN) cleaned >>"
